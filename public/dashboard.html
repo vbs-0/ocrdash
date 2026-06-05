@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LensIQ — Admin Dashboard</title>
+<style>
+  :root{--bg:#1c1a17;--panel:#242019;--panel2:#2c2720;--ink:#e9e0d4;--soft:#9a8f80;--rule:#3a352d;
+        --accent:#d9763a;--accent2:#f28c4f;--green:#81c784;--red:#e57373;--radius:10px;}
+  *{box-sizing:border-box}
+  body{margin:0;font-family:Inter,system-ui,Segoe UI,sans-serif;background:var(--bg);color:var(--ink);font-size:14px}
+  a{color:var(--accent2)}
+  .hidden{display:none!important}
+  /* Login */
+  .login-wrap{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px}
+  .card{background:var(--panel);border:1px solid var(--rule);border-radius:14px;padding:28px;width:100%;max-width:380px;box-shadow:0 20px 60px rgba(0,0,0,.5)}
+  .brand{font-family:'Fraunces',serif;font-size:30px;font-weight:700;letter-spacing:-.5px}
+  .brand em{color:var(--accent);font-style:normal}
+  .muted{color:var(--soft);font-size:13px}
+  input,select{width:100%;padding:11px 13px;background:var(--panel2);border:1px solid var(--rule);border-radius:8px;color:var(--ink);font-size:14px;margin-top:6px}
+  input:focus,select:focus{outline:none;border-color:var(--accent)}
+  label{display:block;margin-top:14px;font-size:12px;color:var(--soft);text-transform:uppercase;letter-spacing:.08em}
+  button{cursor:pointer;border:none;border-radius:8px;padding:10px 16px;font-weight:600;font-size:13px;background:var(--panel2);color:var(--ink);border:1px solid var(--rule);transition:.15s}
+  button:hover{border-color:var(--accent)}
+  button.primary{background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff;border:none;width:100%;margin-top:18px;padding:12px}
+  button.sm{padding:6px 10px;font-size:12px}
+  button.danger{color:var(--red);border-color:var(--red)}
+  button.go{background:var(--green);color:#10210f;border:none}
+  .err{color:var(--red);font-size:13px;margin-top:10px;min-height:18px}
+  /* Shell */
+  .top{display:flex;align-items:center;justify-content:space-between;padding:12px 20px;background:var(--panel);border-bottom:1px solid var(--rule);position:sticky;top:0;z-index:10}
+  .tabs{display:flex;gap:4px;flex-wrap:wrap;padding:10px 16px;background:var(--panel);border-bottom:1px solid var(--rule);position:sticky;top:57px;z-index:9}
+  .tab{padding:8px 14px;border-radius:8px;cursor:pointer;color:var(--soft);font-weight:600}
+  .tab.active{background:var(--panel2);color:var(--accent2)}
+  .wrap{max-width:1100px;margin:0 auto;padding:22px 16px 60px}
+  .panel{background:var(--panel);border:1px solid var(--rule);border-radius:var(--radius);padding:18px;margin-bottom:18px}
+  .panel h3{margin:0 0 14px;font-family:'Fraunces',serif;font-size:16px}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{text-align:left;padding:9px 8px;border-bottom:1px solid var(--rule)}
+  th{color:var(--soft);font-size:11px;text-transform:uppercase;letter-spacing:.06em}
+  .row{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end}
+  .row>div{flex:1;min-width:160px}
+  .pill{font-size:11px;padding:2px 8px;border-radius:20px}
+  .pill.on{background:rgba(129,199,132,.15);color:var(--green)}
+  .pill.off{background:rgba(229,115,115,.15);color:var(--red)}
+  .stat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
+  .stat{background:var(--panel2);border:1px solid var(--rule);border-radius:10px;padding:14px}
+  .stat .n{font-size:26px;font-weight:700;color:var(--accent2);font-family:'JetBrains Mono',monospace}
+  .stat .l{color:var(--soft);font-size:12px;margin-top:4px}
+  .toast{position:fixed;bottom:20px;right:20px;background:var(--panel2);border:1px solid var(--accent);border-radius:10px;padding:12px 16px;box-shadow:0 8px 30px rgba(0,0,0,.5);z-index:50;max-width:320px}
+  code{background:var(--panel2);padding:2px 6px;border-radius:4px;font-size:12px}
+  @media(max-width:600px){.wrap{padding:14px 10px 60px}.top .brand{font-size:22px}td,th{padding:7px 5px}}
+</style>
+</head>
+<body>
+
+<!-- LOGIN -->
+<div id="loginView" class="login-wrap">
+  <div class="card">
+    <div class="brand">Lens<em>IQ</em></div>
+    <div class="muted" id="loginSub">Admin Dashboard · sign in</div>
+    <label>Email</label><input id="email" type="email" placeholder="you@company.com" autocomplete="username">
+    <label>Password</label><input id="password" type="password" placeholder="••••••" autocomplete="current-password">
+    <div class="err" id="loginErr"></div>
+    <button class="primary" id="loginBtn">Sign in</button>
+  </div>
+</div>
+
+<!-- APP -->
+<div id="appView" class="hidden">
+  <div class="top">
+    <div class="brand">Lens<em>IQ</em> <span class="muted" style="font-size:13px">Admin</span></div>
+    <div><span class="muted" id="who"></span> <button class="sm" id="logoutBtn">Logout</button></div>
+  </div>
+  <div class="tabs" id="tabs"></div>
+  <div class="wrap" id="content"></div>
+</div>
+
+<script>
+const API = `http://${location.hostname || '127.0.0.1'}:7788`;
+let TOKEN = localStorage.getItem('lensiqAdminToken') || '';
+let WHO = localStorage.getItem('lensiqAdminEmail') || '';
+
+const $ = s => document.querySelector(s);
+function toast(m){const t=document.createElement('div');t.className='toast';t.textContent=m;document.body.appendChild(t);setTimeout(()=>t.remove(),3000);}
+async function api(path, opts={}){
+  opts.headers = Object.assign({'Content-Type':'application/json', 'Authorization':'Bearer '+TOKEN}, opts.headers||{});
+  const r = await fetch(API+path, opts);
+  if(r.status===401){ logout(); throw new Error('Session expired'); }
+  return r.json();
+}
+function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+
+// ── QR scan mode (mobile opens dashboard.html?qr=TOKEN) ──
+const qrToken = new URLSearchParams(location.search).get('qr');
+if(qrToken){ $('#loginSub').textContent='Approve desktop admin login (QR)'; }
+
+// ── Auth ──
+$('#loginBtn').onclick = async () => {
+  $('#loginErr').textContent='';
+  const email=$('#email').value.trim(), password=$('#password').value;
+  try{
+    if(qrToken){
+      const r = await fetch(API+'/api/qr/scan',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:qrToken,email,password})});
+      const j = await r.json();
+      if(!r.ok||!j.ok) throw new Error(j.detail||'Failed');
+      $('#loginView').innerHTML='<div class="card"><div class="brand">Lens<em>IQ</em></div><p style="color:var(--green);margin-top:14px">✓ Approved. Your desktop app is now unlocking the admin dashboard.</p><p class="muted">You can close this page.</p></div>';
+      return;
+    }
+    const r = await fetch(API+'/api/admin/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,password})});
+    const j = await r.json();
+    if(!r.ok||!j.ok) throw new Error(j.detail||'Invalid credentials');
+    TOKEN=j.token; WHO=j.email;
+    localStorage.setItem('lensiqAdminToken',TOKEN); localStorage.setItem('lensiqAdminEmail',WHO);
+    showApp();
+  }catch(e){ $('#loginErr').textContent = e.message; }
+};
+function logout(){ TOKEN=''; localStorage.removeItem('lensiqAdminToken'); $('#appView').classList.add('hidden'); $('#loginView').classList.remove('hidden'); }
+$('#logoutBtn').onclick = logout;
+
+// ── App shell ──
+const TABS = ['Overview','Employees','Usage','API & Models','Broadcast','Updates','Account'];
+let activeTab = 'Overview';
+function showApp(){
+  $('#loginView').classList.add('hidden'); $('#appView').classList.remove('hidden');
+  $('#who').textContent = WHO;
+  $('#tabs').innerHTML = TABS.map(t=>`<div class="tab ${t===activeTab?'active':''}" data-t="${t}">${t}</div>`).join('');
+  $('#tabs').querySelectorAll('.tab').forEach(el=>el.onclick=()=>{activeTab=el.dataset.t;showApp();render();});
+  render();
+  connectWS();
+}
+let ws;
+function connectWS(){
+  try{ ws && ws.close(); }catch(e){}
+  ws = new WebSocket(`ws://${location.hostname||'127.0.0.1'}:7788/ws/admin`);
+  ws.onmessage = ev=>{ const m=JSON.parse(ev.data); if(m.type==='usage' && activeTab==='Usage') render(); };
+}
+
+async function render(){
+  const c = $('#content');
+  if(activeTab==='Overview') return renderOverview(c);
+  if(activeTab==='Employees') return renderEmployees(c);
+  if(activeTab==='Usage') return renderUsage(c);
+  if(activeTab==='API & Models') return renderSettings(c);
+  if(activeTab==='Broadcast') return renderBroadcast(c);
+  if(activeTab==='Updates') return renderUpdates(c);
+  if(activeTab==='Account') return renderAccount(c);
+}
+
+async function renderOverview(c){
+  const s = await api('/api/usage/summary');
+  const emps = s.summary||[];
+  const totImg = emps.reduce((a,e)=>a+e.images,0), totRec = emps.reduce((a,e)=>a+e.records,0), totReq = emps.reduce((a,e)=>a+e.requests,0);
+  const active = emps.filter(e=>e.active).length;
+  c.innerHTML = `<div class="panel"><h3>Overview</h3>
+    <div class="stat-grid">
+      <div class="stat"><div class="n">${emps.length}</div><div class="l">Employees (${active} active)</div></div>
+      <div class="stat"><div class="n">${totImg}</div><div class="l">Images processed</div></div>
+      <div class="stat"><div class="n">${totRec}</div><div class="l">Records extracted</div></div>
+      <div class="stat"><div class="n">${totReq}</div><div class="l">Total requests</div></div>
+    </div></div>
+    <div class="panel"><h3>Top employees</h3><table><thead><tr><th>ID</th><th>Name</th><th>Images</th><th>Records</th><th>Requests</th></tr></thead>
+    <tbody>${emps.slice(0,8).map(e=>`<tr><td>${esc(e.employee_id)}</td><td>${esc(e.name)||'—'}</td><td>${e.images}</td><td>${e.records}</td><td>${e.requests}</td></tr>`).join('')||'<tr><td colspan=5 class="muted">No data yet</td></tr>'}</tbody></table></div>`;
+}
+
+async function renderEmployees(c){
+  const j = await api('/api/employees');
+  const rows = (j.employees||[]).map(e=>`<tr>
+    <td>${esc(e.employee_id)}</td>
+    <td><input data-f="name" data-id="${esc(e.employee_id)}" value="${esc(e.name)}" style="margin:0;padding:6px"></td>
+    <td><span class="pill ${e.active?'on':'off'}">${e.active?'active':'inactive'}</span></td>
+    <td><input data-f="api_key_override" data-id="${esc(e.employee_id)}" value="${esc(e.api_key_override)}" placeholder="(default)" style="margin:0;padding:6px"></td>
+    <td><input data-f="api_key2_override" data-id="${esc(e.employee_id)}" value="${esc(e.api_key2_override||'')}" placeholder="(default)" style="margin:0;padding:6px"></td>
+    <td><input data-f="model_override" data-id="${esc(e.employee_id)}" value="${esc(e.model_override)}" placeholder="(default)" style="margin:0;padding:6px"></td>
+    <td style="white-space:nowrap">
+      <button class="sm" onclick="toggleEmp('${esc(e.employee_id)}',${e.active?0:1})">${e.active?'Disable':'Enable'}</button>
+      <button class="sm" onclick="saveEmp('${esc(e.employee_id)}')">Save</button>
+      <button class="sm danger" onclick="delEmp('${esc(e.employee_id)}')">✕</button>
+    </td></tr>`).join('');
+  c.innerHTML = `<div class="panel"><h3>Add employee</h3>
+    <div class="row">
+      <div><label>Employee ID *</label><input id="newEid" placeholder="EMP123"></div>
+      <div><label>Name</label><input id="newName" placeholder="Full name"></div>
+      <div style="flex:0"><button class="go" style="margin-top:6px" onclick="addEmp()">+ Add</button></div>
+    </div></div>
+    <div class="panel"><h3>Employees & per-user overrides</h3>
+    <div style="overflow-x:auto"><table><thead><tr><th>ID</th><th>Name</th><th>Status</th><th>API key</th><th>Fallback key</th><th>Model</th><th></th></tr></thead>
+    <tbody>${rows||'<tr><td colspan=7 class="muted">No employees yet</td></tr>'}</tbody></table></div>
+    <p class="muted">Overrides are per-employee; leave blank to use the global defaults from “API & Models”.</p></div>`;
+}
+async function addEmp(){const id=$('#newEid').value.trim();if(!id)return toast('Employee ID required');const r=await api('/api/employees',{method:'POST',body:JSON.stringify({employee_id:id,name:$('#newName').value.trim(),active:true})});toast(r.ok?'Added':'Error');render();}
+async function delEmp(id){if(!confirm('Delete '+id+'?'))return;await api('/api/employees/'+encodeURIComponent(id),{method:'DELETE'});toast('Deleted');render();}
+async function toggleEmp(id,active){await api('/api/employees/'+encodeURIComponent(id),{method:'PATCH',body:JSON.stringify({active})});toast('Updated');render();}
+async function saveEmp(id){const body={};document.querySelectorAll(`[data-id="${id}"]`).forEach(i=>body[i.dataset.f]=i.value);await api('/api/employees/'+encodeURIComponent(id),{method:'PATCH',body:JSON.stringify(body)});toast('Saved — tools will refresh config');}
+
+async function renderUsage(c){
+  const s = await api('/api/usage/summary');
+  const rows = (s.summary||[]).map(e=>`<tr><td>${esc(e.employee_id)}</td><td>${esc(e.name)||'—'}</td>
+     <td><span class="pill ${e.active?'on':'off'}">${e.active?'active':'off'}</span></td>
+     <td>${e.images}</td><td>${e.records}</td><td>${e.requests}</td>
+     <td>${e.last_seen?new Date(e.last_seen*1000).toLocaleString():'—'}</td></tr>`).join('');
+  c.innerHTML = `<div class="panel"><h3>Per-employee usage <span class="muted">(live)</span></h3>
+    <div style="overflow-x:auto"><table><thead><tr><th>ID</th><th>Name</th><th>Status</th><th>Images</th><th>Records</th><th>Requests</th><th>Last seen</th></tr></thead>
+    <tbody>${rows||'<tr><td colspan=7 class="muted">No usage yet</td></tr>'}</tbody></table></div></div>`;
+}
+
+async function renderSettings(c){
+  const j = await api('/api/settings'); const s=j.settings||{};
+  c.innerHTML = `<div class="panel"><h3>Global API & Model defaults</h3>
+    <p class="muted">Pushed to every tool (unless an employee has an override). Editable here and in the tool's admin panel.</p>
+    <label>Primary Gemini API key</label><input id="s_key" value="${esc(s.default_api_key)}">
+    <label>Fallback Gemini API key</label><input id="s_key2" value="${esc(s.default_api_key_2||'')}" placeholder="used if primary fails / quota">
+    <div class="row"><div><label>Primary model</label><input id="s_model" value="${esc(s.default_model)}"></div>
+      <div><label>Fallback model 1</label><input id="s_fb1" value="${esc(s.default_fb1)}"></div>
+      <div><label>Fallback model 2</label><input id="s_fb2" value="${esc(s.default_fb2)}"></div></div>
+    <label>Tool admin-panel password (shared)</label><input id="s_pw" value="${esc(s.tool_admin_password)}">
+    <button class="primary" style="max-width:220px" onclick="saveSettings()">Save & push to tools</button></div>`;
+}
+async function saveSettings(){
+  await api('/api/settings',{method:'POST',body:JSON.stringify({
+    default_api_key:$('#s_key').value, default_api_key_2:$('#s_key2').value,
+    default_model:$('#s_model').value, default_fb1:$('#s_fb1').value, default_fb2:$('#s_fb2').value,
+    tool_admin_password:$('#s_pw').value })});
+  toast('Saved — connected tools refresh automatically');
+}
+
+async function renderBroadcast(c){
+  c.innerHTML = `<div class="panel"><h3>Broadcast a popup to all tools</h3>
+    <label>Message</label><input id="b_msg" placeholder="e.g. Please save your work — maintenance at 6 PM">
+    <label>Level</label><select id="b_lvl"><option value="info">info</option><option value="warning">warning</option><option value="critical">critical</option></select>
+    <button class="primary" style="max-width:220px" onclick="sendBroadcast()">Send to everyone</button>
+    <p class="muted">Online tools show it instantly (WebSocket); offline tools show it on next reconnect.</p></div>`;
+}
+async function sendBroadcast(){const m=$('#b_msg').value.trim();if(!m)return toast('Enter a message');await api('/api/broadcast',{method:'POST',body:JSON.stringify({message:m,level:$('#b_lvl').value})});toast('Broadcast sent');$('#b_msg').value='';}
+
+async function renderUpdates(c){
+  const j = await fetch(API+'/api/updates/latest').then(r=>r.json());
+  c.innerHTML = `<div class="panel"><h3>Current release</h3>
+    <p>Version <code>${esc(j.version)}</code> · ${j.pushed?'<span class="pill on">pushed</span>':'<span class="pill off">not pushed</span>'} ${j.filename?'· file <code>'+esc(j.filename)+'</code>':''}</p>
+    <p class="muted">${esc(j.notes||'')}</p></div>
+    <div class="panel"><h3>Upload a new installer</h3>
+    <div class="row"><div><label>Version</label><input id="u_ver" placeholder="1.1.0"></div>
+      <div style="flex:2"><label>Release notes</label><input id="u_notes" placeholder="What changed"></div></div>
+    <label>Installer .exe</label><input id="u_file" type="file" accept=".exe">
+    <div class="row" style="margin-top:14px">
+      <button class="go" onclick="uploadUpdate()">⬆ Upload</button>
+      <button class="primary" style="max-width:260px;margin-top:0" onclick="pushUpdate()">🚀 Push update to all tools</button>
+    </div>
+    <p class="muted">Upload first, then Push. Tools see “Update available” in their admin panel and on next check.</p></div>`;
+}
+async function uploadUpdate(){
+  const f=$('#u_file').files[0]; if(!f)return toast('Choose an .exe');
+  const fd=new FormData(); fd.append('version',$('#u_ver').value||'1.0.0'); fd.append('notes',$('#u_notes').value||''); fd.append('file',f);
+  toast('Uploading…');
+  const r=await fetch(API+'/api/updates/upload',{method:'POST',headers:{'Authorization':'Bearer '+TOKEN},body:fd});
+  const j=await r.json(); toast(j.ok?'Uploaded '+j.filename:'Upload failed'); render();
+}
+async function pushUpdate(){if(!confirm('Push this update to ALL tools?'))return;await api('/api/updates/push',{method:'POST'});toast('Update pushed');render();}
+
+async function renderAccount(c){
+  c.innerHTML = `<div class="panel"><h3>Account</h3><p>Signed in as <code>${esc(WHO)}</code></p>
+    <label>New password</label><input id="a_pw" type="password" placeholder="new password">
+    <button class="primary" style="max-width:220px" onclick="changePw()">Change password</button></div>
+    <div class="panel"><h3>Admins</h3><p class="muted">skylinx@gmail.com and vbs@gmail.com are configured. Same password applies to QR login from the desktop tool.</p></div>`;
+}
+async function changePw(){const p=$('#a_pw').value;if(p.length<4)return toast('Too short');await api('/api/admin/change_password',{method:'POST',body:JSON.stringify({new_password:p})});toast('Password changed');$('#a_pw').value='';}
+
+// boot
+if(TOKEN && !qrToken){ showApp(); }
+</script>
+</body>
+</html>

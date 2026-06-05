@@ -1,0 +1,10 @@
+# Runtime data — never commit
+lensiq.db
+lensiq.db-journal
+updates/
+__pycache__/
+*.pyc
+venv/
+.venv/
+# pm2 / logs
+*.log
