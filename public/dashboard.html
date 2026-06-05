@@ -325,12 +325,19 @@ async function renderDevices(c){
 async function startScan(){
   const msg=$('#scanMsg');
   if(typeof Html5Qrcode==='undefined'){ msg.textContent='Scanner not loaded (no internet for the QR library). Use the paste box.'; return; }
+  if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
+    msg.innerHTML='📷 Camera blocked because the dashboard is on <b>http</b> (not https). Browsers only allow the camera on <b>https</b> or <b>localhost</b>.<br>→ Use the <b>paste box</b> below, or scan the tool\'s QR with your <b>phone camera app</b>.';
+    return;
+  }
   try{
     html5qr = new Html5Qrcode('reader');
     await html5qr.start({facingMode:'environment'}, {fps:10,qrbox:240},
       async d=>{ await stopScan(); approveToken(d); }, ()=>{});
     const b=$('#scanStart'); b.textContent='⏹ Stop'; b.onclick=stopScan;
-  }catch(e){ msg.textContent='Camera unavailable: '+e.message+' — use the paste box instead.'; }
+  }catch(e){
+    const reason=(e&&(e.message||e.name))||'permission denied or unavailable';
+    msg.innerHTML='Camera unavailable ('+reason+'). Use the <b>paste box</b> below, or scan with your <b>phone camera app</b>.';
+  }
 }
 async function stopScan(){ try{ if(html5qr){ await html5qr.stop(); html5qr.clear(); html5qr=null; } }catch(e){} const b=$('#scanStart'); if(b){ b.textContent='📷 Start camera scan'; b.onclick=startScan; } }
 function approveManual(){ const v=$('#qrManual').value.trim(); if(!v)return toast('Paste a QR link or token'); approveToken(v); }
