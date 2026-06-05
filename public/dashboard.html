@@ -100,7 +100,12 @@
 
 <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 <script>
-const API = `http://${location.hostname || '127.0.0.1'}:7788`;
+// When served over HTTPS (behind nginx), talk to the SAME origin (nginx proxies
+// /api and /ws to the backend) — avoids mixed-content blocking. Over plain http,
+// hit the backend directly on :7788.
+const HTTPS = location.protocol === 'https:';
+const API = HTTPS ? `${location.protocol}//${location.host}` : `http://${location.hostname || '127.0.0.1'}:7788`;
+const WS_BASE = HTTPS ? `wss://${location.host}` : `ws://${location.hostname || '127.0.0.1'}:7788`;
 let TOKEN = localStorage.getItem('lensiqAdminToken') || '';
 let WHO = localStorage.getItem('lensiqAdminEmail') || '';
 
@@ -155,7 +160,7 @@ function showApp(){
 let ws;
 function connectWS(){
   try{ ws && ws.close(); }catch(e){}
-  ws = new WebSocket(`ws://${location.hostname||'127.0.0.1'}:7788/ws/admin`);
+  ws = new WebSocket(WS_BASE + '/ws/admin');
   ws.onmessage = ev=>{ const m=JSON.parse(ev.data); if(m.type==='usage' && activeTab==='Usage') render(); };
 }
 

@@ -60,6 +60,19 @@ python3 frontend_server.py    # :7789
 
 Admin/dashboard endpoints require `Authorization: Bearer <token>` from `/api/admin/login`.
 
+## HTTPS (enables the in-dashboard camera QR scanner)
+Browsers only allow the camera on `https://`. Put nginx in front:
+```bash
+sudo bash nginx/setup-https.sh      # installs nginx, self-signed cert for the IP, proxy config
+```
+Then open **https://129.159.20.37** (accept the one-time self-signed warning). The dashboard
+auto-switches to same-origin API/WS through nginx, so the camera scanner works with no
+mixed-content blocking. The desktop **tool** keeps using `http://IP:7788` directly (a native
+app, unaffected by browser camera/mixed-content rules).
+
+For a clean (no-warning) cert you need a domain — easiest is a free **Cloudflare Tunnel**
+(real https hostname, no open ports), or Let's Encrypt once a domain points at the IP.
+
 ## HRMS-ready
 Employees, usage, and settings are plain SQLite tables with clean REST endpoints —
 straightforward to sync to an HRMS later (export `/api/usage/summary`, map `employee_id`).
