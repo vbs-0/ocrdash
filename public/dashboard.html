@@ -235,27 +235,56 @@ async function sendBroadcast(){const m=$('#b_msg').value.trim();if(!m)return toa
 
 async function renderUpdates(c){
   const j = await fetch(API+'/api/updates/latest').then(r=>r.json());
+  const h = await api('/api/updates/history');
+  const hist = (h.history||[]).map(u=>`<tr>
+     <td><code>${esc(u.version)}</code></td><td>${esc(u.filename)}</td>
+     <td>${(u.size/1048576).toFixed(1)} MB</td>
+     <td>${u.pushed?'<span class="pill on">published</span>':'<span class="pill off">draft</span>'}</td>
+     <td>${new Date(u.uploaded_at*1000).toLocaleString()}</td></tr>`).join('');
   c.innerHTML = `<div class="panel"><h3>Current release</h3>
-    <p>Version <code>${esc(j.version)}</code> · ${j.pushed?'<span class="pill on">pushed</span>':'<span class="pill off">not pushed</span>'} ${j.filename?'· file <code>'+esc(j.filename)+'</code>':''}</p>
+    <p>Version <code>${esc(j.version)}</code> · ${j.pushed?'<span class="pill on">published</span>':'<span class="pill off">not published</span>'} ${j.filename?'· <code>'+esc(j.filename)+'</code>':''}</p>
     <p class="muted">${esc(j.notes||'')}</p></div>
-    <div class="panel"><h3>Upload a new installer</h3>
+    <div class="panel"><h3>Publish a new version</h3>
     <div class="row"><div><label>Version</label><input id="u_ver" placeholder="1.1.0"></div>
       <div style="flex:2"><label>Release notes</label><input id="u_notes" placeholder="What changed"></div></div>
     <label>Installer .exe</label><input id="u_file" type="file" accept=".exe">
-    <div class="row" style="margin-top:14px">
-      <button class="go" onclick="uploadUpdate()">⬆ Upload</button>
-      <button class="primary" style="max-width:260px;margin-top:0" onclick="pushUpdate()">🚀 Push update to all tools</button>
+    <div id="u_progwrap" style="display:none;margin-top:16px">
+      <div style="height:12px;background:var(--panel2);border:1px solid var(--rule);border-radius:8px;overflow:hidden"><div id="u_bar" style="height:100%;width:0;background:linear-gradient(90deg,var(--accent),var(--accent2));transition:width .12s"></div></div>
+      <div class="muted" id="u_stat" style="margin-top:8px;font-family:'JetBrains Mono',monospace"></div>
     </div>
-    <p class="muted">Upload first, then Push. Tools see “Update available” in their admin panel and on next check.</p></div>`;
+    <button class="primary" style="max-width:300px;margin-top:16px" id="u_go" onclick="uploadAndPublish()">⬆ Upload &amp; Publish to all tools</button>
+    <p class="muted">One step: uploads the installer, then publishes it. Online tools get an update popup instantly; offline tools on next launch.</p></div>
+    <div class="panel"><h3>Update history</h3>
+    <div style="overflow-x:auto"><table><thead><tr><th>Version</th><th>File</th><th>Size</th><th>Status</th><th>Uploaded</th></tr></thead>
+    <tbody>${hist||'<tr><td colspan=5 class="muted">No uploads yet</td></tr>'}</tbody></table></div>
+    <button class="danger sm" style="margin-top:12px" onclick="clearUpdates()">🗑 Clear all history &amp; files</button></div>`;
 }
-async function uploadUpdate(){
-  const f=$('#u_file').files[0]; if(!f)return toast('Choose an .exe');
-  const fd=new FormData(); fd.append('version',$('#u_ver').value||'1.0.0'); fd.append('notes',$('#u_notes').value||''); fd.append('file',f);
-  toast('Uploading…');
-  const r=await fetch(API+'/api/updates/upload',{method:'POST',headers:{'Authorization':'Bearer '+TOKEN},body:fd});
-  const j=await r.json(); toast(j.ok?'Uploaded '+j.filename:'Upload failed'); render();
+function uploadAndPublish(){
+  const f=$('#u_file').files[0]; if(!f)return toast('Choose an .exe file');
+  const ver=$('#u_ver').value.trim()||'1.0.0', notes=$('#u_notes').value.trim()||'';
+  const fd=new FormData(); fd.append('version',ver); fd.append('notes',notes); fd.append('file',f);
+  const xhr=new XMLHttpRequest();
+  xhr.open('POST',API+'/api/updates/upload');
+  xhr.setRequestHeader('Authorization','Bearer '+TOKEN);
+  $('#u_progwrap').style.display='block'; $('#u_go').disabled=true; $('#u_go').textContent='Uploading…';
+  const start=Date.now();
+  xhr.upload.onprogress=e=>{
+    if(!e.lengthComputable)return;
+    const pct=e.loaded/e.total*100, secs=Math.max(0.1,(Date.now()-start)/1000), speed=e.loaded/secs/1048576;
+    $('#u_bar').style.width=pct.toFixed(1)+'%';
+    $('#u_stat').textContent=`${pct.toFixed(0)}%  ·  ${(e.loaded/1048576).toFixed(1)} / ${(e.total/1048576).toFixed(1)} MB  ·  ${speed.toFixed(1)} MB/s`;
+  };
+  xhr.onload=async()=>{
+    if(xhr.status===200){
+      $('#u_stat').textContent='Upload complete — publishing to all tools…';
+      try{ await api('/api/updates/push',{method:'POST'}); }catch(e){}
+      toast('Published v'+ver+' to all tools'); render();
+    } else { toast('Upload failed ('+xhr.status+')'); $('#u_go').disabled=false; $('#u_go').textContent='⬆ Upload & Publish to all tools'; }
+  };
+  xhr.onerror=()=>{ toast('Upload error'); $('#u_go').disabled=false; $('#u_go').textContent='⬆ Upload & Publish to all tools'; };
+  xhr.send(fd);
 }
-async function pushUpdate(){if(!confirm('Push this update to ALL tools?'))return;await api('/api/updates/push',{method:'POST'});toast('Update pushed');render();}
+async function clearUpdates(){ if(!confirm('Delete ALL update history and uploaded files?'))return; await api('/api/updates/clear',{method:'POST'}); toast('Update history cleared'); render(); }
 
 async function renderAccount(c){
   c.innerHTML = `<div class="panel"><h3>Account</h3><p>Signed in as <code>${esc(WHO)}</code></p>

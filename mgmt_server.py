@@ -106,6 +106,9 @@ def init_db():
         CREATE TABLE IF NOT EXISTS qr_tokens(
             token TEXT PRIMARY KEY, created INTEGER, status TEXT,
             admin_email TEXT, auth_token TEXT);
+        CREATE TABLE IF NOT EXISTS update_history(
+            id INTEGER PRIMARY KEY, version TEXT, filename TEXT, notes TEXT,
+            size INTEGER, uploaded_at INTEGER, pushed INTEGER DEFAULT 0);
         """)
         for email, pw, name in SEED_ADMINS:
             if not c.execute("SELECT 1 FROM admins WHERE email=?", (email,)).fetchone():
@@ -301,12 +304,13 @@ async def employee_verify(req: Request):
             c.execute("UPDATE employees SET last_seen=? WHERE employee_id=?", (int(time.time()), eid))
             c.commit()
     if not r:
-        # Auto-register unknown ids as inactive so admin can review/approve.
+        # TESTING PHASE: auto-register AND enable new employees so anyone can start.
+        # (Later, flip active to 0 here to require admin approval before use.)
         with _db_lock, db() as c:
             c.execute("INSERT OR IGNORE INTO employees(employee_id,name,active,created_at,last_seen) "
-                      "VALUES(?,?,?,?,?)", (eid, "", 0, int(time.time()), int(time.time())))
+                      "VALUES(?,?,?,?,?)", (eid, "", 1, int(time.time()), int(time.time())))
             c.commit()
-        return {"ok": False, "reason": "unknown", "active": False}
+        return {"ok": True, "name": "", "active": True}
     if not r["active"]:
         return {"ok": False, "reason": "inactive", "active": False}
     return {"ok": True, "name": r["name"], "active": True}
@@ -430,19 +434,56 @@ async def upload_update(version: str = Form(...), notes: str = Form(""),
     with open(dest, "wb") as f:
         while chunk := await file.read(1 << 20):
             f.write(chunk)
+    size = os.path.getsize(dest)
     set_setting("latest_version", version)
     set_setting("update_filename", safe)
     set_setting("update_notes", notes)
     set_setting("update_pushed", "0")
-    return {"ok": True, "filename": safe, "version": version}
+    with _db_lock, db() as c:
+        c.execute("INSERT INTO update_history(version,filename,notes,size,uploaded_at,pushed) VALUES(?,?,?,?,?,0)",
+                  (version, safe, notes, size, int(time.time())))
+        c.commit()
+    return {"ok": True, "filename": safe, "version": version, "size": size}
 
 
 @app.post("/api/updates/push")
 async def push_update(authorization: Optional[str] = Header(None)):
     require_admin(authorization)
     set_setting("update_pushed", "1")
+    with _db_lock, db() as c:
+        c.execute("UPDATE update_history SET pushed=1 WHERE filename=?", (get_setting("update_filename"),))
+        c.commit()
     await hub.push_tools({"type": "update_available", "version": get_setting("latest_version"),
                           "notes": get_setting("update_notes")})
+    return {"ok": True}
+
+
+@app.get("/api/updates/history")
+def update_history(authorization: Optional[str] = Header(None)):
+    require_admin(authorization)
+    with db() as c:
+        rows = c.execute("SELECT * FROM update_history ORDER BY uploaded_at DESC").fetchall()
+    return {"ok": True, "history": [dict(r) for r in rows]}
+
+
+@app.post("/api/updates/clear")
+def clear_updates(authorization: Optional[str] = Header(None)):
+    require_admin(authorization)
+    with db() as c:
+        rows = c.execute("SELECT filename FROM update_history").fetchall()
+    for r in rows:
+        try:
+            p = os.path.join(UPLOAD_DIR, os.path.basename(r["filename"]))
+            if os.path.exists(p):
+                os.remove(p)
+        except Exception:
+            pass
+    with _db_lock, db() as c:
+        c.execute("DELETE FROM update_history")
+        c.commit()
+    set_setting("update_pushed", "0")
+    set_setting("update_filename", "")
+    set_setting("update_notes", "")
     return {"ok": True}
 
 
