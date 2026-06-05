@@ -527,6 +527,26 @@ def qr_status(token: str):
             "email": r["admin_email"]}
 
 
+@app.post("/api/qr/approve")
+async def qr_approve(req: Request, authorization: Optional[str] = Header(None)):
+    # Approve a tool QR using an ALREADY-logged-in dashboard session (no re-login).
+    email = require_admin(authorization)
+    b = await req.json()
+    token = (b.get("token") or "").strip()
+    if "qr=" in token:                      # tolerate scanning the full URL
+        token = token.split("qr=")[-1].split("&")[0]
+    with db() as c:
+        qr = c.execute("SELECT * FROM qr_tokens WHERE token=?", (token,)).fetchone()
+    if not qr or qr["created"] < time.time() - 300:
+        raise HTTPException(400, "QR expired or invalid")
+    auth = make_token(email)
+    with _db_lock, db() as c:
+        c.execute("UPDATE qr_tokens SET status='approved', admin_email=?, auth_token=? WHERE token=?",
+                  (email, auth, token))
+        c.commit()
+    return {"ok": True}
+
+
 @app.post("/api/qr/scan")
 async def qr_scan(req: Request):
     b = await req.json()
