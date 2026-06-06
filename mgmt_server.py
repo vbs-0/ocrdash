@@ -101,7 +101,9 @@ def init_db():
             model_override TEXT DEFAULT '', created_at INTEGER, last_seen INTEGER);
         CREATE TABLE IF NOT EXISTS usage(
             id INTEGER PRIMARY KEY, employee_id TEXT, ts INTEGER, engine TEXT,
-            images INTEGER, records INTEGER, ocr_ms REAL, classify_ms REAL);
+            images INTEGER, records INTEGER, ocr_ms REAL, classify_ms REAL,
+            session_duration INTEGER DEFAULT 0, manual_corrections INTEGER DEFAULT 0,
+            offline_images INTEGER DEFAULT 0);
         CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY, value TEXT);
         CREATE TABLE IF NOT EXISTS qr_tokens(
             token TEXT PRIMARY KEY, created INTEGER, status TEXT,
@@ -110,6 +112,13 @@ def init_db():
             id INTEGER PRIMARY KEY, version TEXT, filename TEXT, notes TEXT,
             size INTEGER, uploaded_at INTEGER, pushed INTEGER DEFAULT 0);
         """)
+        # Run migrations for enhanced analytics
+        try: c.execute("ALTER TABLE usage ADD COLUMN session_duration INTEGER DEFAULT 0")
+        except Exception: pass
+        try: c.execute("ALTER TABLE usage ADD COLUMN manual_corrections INTEGER DEFAULT 0")
+        except Exception: pass
+        try: c.execute("ALTER TABLE usage ADD COLUMN offline_images INTEGER DEFAULT 0")
+        except Exception: pass
         for email, pw, name in SEED_ADMINS:
             if not c.execute("SELECT 1 FROM admins WHERE email=?", (email,)).fetchone():
                 c.execute("INSERT INTO admins(email,name,pw) VALUES(?,?,?)",
@@ -356,11 +365,13 @@ async def post_usage(req: Request):
     events = b.get("events") or [b]   # accept single or batched
     with _db_lock, db() as c:
         for e in events:
-            c.execute("INSERT INTO usage(employee_id,ts,engine,images,records,ocr_ms,classify_ms) "
-                      "VALUES(?,?,?,?,?,?,?)",
+            c.execute("INSERT INTO usage(employee_id,ts,engine,images,records,ocr_ms,classify_ms,session_duration,manual_corrections,offline_images) "
+                      "VALUES(?,?,?,?,?,?,?,?,?,?)",
                       (e.get("employee_id", ""), int(e.get("ts", time.time())), e.get("engine", ""),
                        int(e.get("images", 0)), int(e.get("records", 0)),
-                       float(e.get("ocr_ms", 0)), float(e.get("classify_ms", 0))))
+                       float(e.get("ocr_ms", 0)), float(e.get("classify_ms", 0)),
+                       int(e.get("session_duration", 0)), int(e.get("manual_corrections", 0)),
+                       int(e.get("offline_images", 0))))
         c.commit()
     await hub.push_admins({"type": "usage", "count": len(events)})
     return {"ok": True, "stored": len(events)}
@@ -422,6 +433,16 @@ async def broadcast(req: Request, authorization: Optional[str] = Header(None)):
     await hub.push_tools({"type": "broadcast", "id": bid, "message": msg, "level": level})
     return {"ok": True, "id": bid}
 
+@app.delete("/api/broadcast")
+async def clear_broadcast(authorization: Optional[str] = Header(None)):
+    require_admin(authorization)
+    bid = str(int(get_setting("broadcast_id", "0")) + 1)
+    set_setting("broadcast_message", "")
+    set_setting("broadcast_level", "info")
+    set_setting("broadcast_id", bid)
+    await hub.push_tools({"type": "broadcast", "id": bid, "message": "", "level": "info"})
+    return {"ok": True, "id": bid}
+
 
 # ── Updates ───────────────────────────────────────────────────────────────────
 @app.post("/api/updates/upload")
@@ -464,6 +485,20 @@ def update_history(authorization: Optional[str] = Header(None)):
     with db() as c:
         rows = c.execute("SELECT * FROM update_history ORDER BY uploaded_at DESC").fetchall()
     return {"ok": True, "history": [dict(r) for r in rows]}
+
+
+@app.patch("/api/updates/notes/{version}")
+async def update_notes(version: str, req: Request, authorization: Optional[str] = Header(None)):
+    require_admin(authorization)
+    b = await req.json()
+    notes = b.get("notes", "")
+    with _db_lock, db() as c:
+        c.execute("UPDATE update_history SET notes=? WHERE version=?", (notes, version))
+        c.commit()
+    # If editing the current latest version, update the global setting
+    if get_setting("latest_version") == version:
+        set_setting("update_notes", notes)
+    return {"ok": True}
 
 
 @app.post("/api/updates/clear")
