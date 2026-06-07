@@ -57,7 +57,7 @@ DEFAULTS = {
     "default_fb2": "gemini-3.1-flash-lite",
     "google_sheets_url": "",
     "google_sheets_title": "",
-    "google_sheets_apps_script_url": "https://script.google.com/macros/s/AKfycbwIE5IJWQkj1F14H1qq3MF2f3ffkQfWgNN6P49aZa3wpIo_HJmI-U2vtXAC34IxLgU6eg/exec",
+    "google_sheets_apps_script_url": "https://script.google.com/macros/s/AKfycbxvA8oRwrfaLHQbUQLsPURGhndaOHslbak5-SWp3uOhLeD1ZZasL1Nryn2ti4IgvYo/exec",
     "latest_version": "1.0.0",
     "update_filename": "",
     "update_notes": "",
