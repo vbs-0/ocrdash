@@ -160,13 +160,19 @@ def get_sheet_title(url: str) -> str:
         fetch_url = url
         if "/edit" in url:
             fetch_url = re.sub(r"/edit.*", "/htmlview", url)
+        elif "/pub" in url:
+            fetch_url = url.split("?")[0]
+            if not fetch_url.endswith("/pub"):
+                idx = url.find("/pub")
+                if idx > -1:
+                    fetch_url = url[:idx+4]
         req = urllib.request.Request(fetch_url, headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'})
         with urllib.request.urlopen(req, timeout=3) as r:
             html = r.read().decode('utf-8', errors='ignore')
             m = re.search(r"<title>([^<]+)</title>", html, re.IGNORECASE)
             if m:
                 title = m.group(1)
-                title = re.sub(r"\s*-\s*Google\s*Sheets", "", title, flags=re.IGNORECASE)
+                title = re.sub(r"\s*-\s*Google\s*(Sheets|Drive)", "", title, flags=re.IGNORECASE)
                 title = re.sub(r"\.xlsx?", "", title, flags=re.IGNORECASE)
                 return title.strip()
     except Exception as e:
