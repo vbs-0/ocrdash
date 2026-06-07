@@ -309,7 +309,6 @@ async function renderSettings(c){
       <div><label>Fallback model 1</label><input id="s_fb1" value="${esc(s.default_fb1)}"></div>
       <div><label>Fallback model 2</label><input id="s_fb2" value="${esc(s.default_fb2)}"></div></div>
     <label>Global Default Google Sheets URL ${s.google_sheets_title ? `(Active Sheet: <span style="color:var(--green);font-weight:bold">${esc(s.google_sheets_title)}</span>)` : ''}</label><input id="s_sheets_url" value="${esc(s.google_sheets_url||'')}" placeholder="https://docs.google.com/spreadsheets/d/.../edit">
-    <label>Google Apps Script Web App URL</label><input id="s_apps_script_url" value="${esc(s.google_sheets_apps_script_url||'')}" placeholder="https://script.google.com/macros/s/.../exec">
     <label>Tool admin-panel password (shared)</label><input id="s_pw" value="${esc(s.tool_admin_password)}">
     <button class="primary" style="max-width:220px" onclick="saveSettings()">Save & push to tools</button></div>`;
 }
@@ -317,7 +316,7 @@ async function saveSettings(){
   await api('/api/settings',{method:'POST',body:JSON.stringify({
     default_api_key:$('#s_key').value, default_api_key_2:$('#s_key2').value,
     default_model:$('#s_model').value, default_fb1:$('#s_fb1').value, default_fb2:$('#s_fb2').value,
-    google_sheets_url:$('#s_sheets_url').value, google_sheets_apps_script_url:$('#s_apps_script_url').value,
+    google_sheets_url:$('#s_sheets_url').value,
     tool_admin_password:$('#s_pw').value })});
   toast('Saved — connected tools refresh automatically');
 }
