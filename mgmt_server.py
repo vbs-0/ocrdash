@@ -56,8 +56,7 @@ DEFAULTS = {
     "default_fb1": "gemini-3.1-flash-lite",
     "default_fb2": "gemini-3.1-flash-lite",
     "google_sheets_url": "",
-    "google_sheets_title": "",
-    "google_sheets_apps_script_url": "https://script.google.com/macros/s/AKfycbxvA8oRwrfaLHQbUQLsPURGhndaOHslbak5-SWp3uOhLeD1ZZasL1Nryn2ti4IgvYo/exec",
+    "google_sheets_apps_script_url": "",
     "latest_version": "1.0.0",
     "update_filename": "",
     "update_notes": "",
@@ -102,7 +101,6 @@ def init_db():
             active INTEGER DEFAULT 1, api_key_override TEXT DEFAULT '',
             api_key2_override TEXT DEFAULT '',
             model_override TEXT DEFAULT '', google_sheets_url TEXT DEFAULT '',
-            google_sheets_title TEXT DEFAULT '',
             created_at INTEGER, last_seen INTEGER);
         CREATE TABLE IF NOT EXISTS usage(
             id INTEGER PRIMARY KEY, employee_id TEXT, ts INTEGER, engine TEXT,
@@ -126,8 +124,6 @@ def init_db():
         except Exception: pass
         try: c.execute("ALTER TABLE employees ADD COLUMN google_sheets_url TEXT DEFAULT ''")
         except Exception: pass
-        try: c.execute("ALTER TABLE employees ADD COLUMN google_sheets_title TEXT DEFAULT ''")
-        except Exception: pass
         for email, pw, name in SEED_ADMINS:
             if not c.execute("SELECT 1 FROM admins WHERE email=?", (email,)).fetchone():
                 c.execute("INSERT INTO admins(email,name,pw) VALUES(?,?,?)",
@@ -149,61 +145,6 @@ def set_setting(key, value):
         c.execute("INSERT INTO settings(key,value) VALUES(?,?) "
                   "ON CONFLICT(key) DO UPDATE SET value=excluded.value", (key, str(value)))
         c.commit()
-
-
-def get_sheet_title(url: str) -> str:
-    if not url:
-        return ""
-    try:
-        import urllib.request
-        import re
-        fetch_url = url
-        if "/edit" in url:
-            fetch_url = re.sub(r"/edit.*", "/htmlview", url)
-        elif "/pub" in url:
-            fetch_url = url.split("?")[0]
-            if not fetch_url.endswith("/pub"):
-                idx = url.find("/pub")
-                if idx > -1:
-                    fetch_url = url[:idx+4]
-        req = urllib.request.Request(fetch_url, headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'})
-        with urllib.request.urlopen(req, timeout=3) as r:
-            html = r.read().decode('utf-8', errors='ignore')
-            m = re.search(r"<title>([^<]+)</title>", html, re.IGNORECASE)
-            if m:
-                title = m.group(1)
-                title = re.sub(r"\s*-\s*Google\s*(Sheets|Drive)", "", title, flags=re.IGNORECASE)
-                title = re.sub(r"\.xlsx?", "", title, flags=re.IGNORECASE)
-                return title.strip()
-    except Exception as e:
-        print("Error fetching sheet title:", e)
-    
-    # Fallback to matching 3-digit sheet no from URL
-    import re
-    m = re.search(r"(?:\/|d\/|_|-)([0-9]{3})(?:\/|_|-|\.|$)", url)
-    if m:
-        return m.group(1)
-    return "Linked"
-
-
-def trigger_resolve_sheet_title(employee_id: str, url: str):
-    def worker():
-        title = get_sheet_title(url)
-        if title:
-            with _db_lock, db() as c:
-                c.execute("UPDATE employees SET google_sheets_title=? WHERE employee_id=?", (title, employee_id))
-                c.commit()
-    t = threading.Thread(target=worker, daemon=True)
-    t.start()
-
-
-def trigger_resolve_global_sheet_title(url: str):
-    def worker():
-        title = get_sheet_title(url)
-        if title:
-            set_setting("google_sheets_title", title)
-    t = threading.Thread(target=worker, daemon=True)
-    t.start()
 
 
 # ── Tokens ────────────────────────────────────────────────────────────────────
@@ -333,8 +274,6 @@ async def add_employee(req: Request, authorization: Optional[str] = Header(None)
             c.commit()
         except sqlite3.IntegrityError:
             raise HTTPException(409, "employee_id already exists")
-    if b.get("google_sheets_url"):
-        trigger_resolve_sheet_title(eid, b["google_sheets_url"])
     return {"ok": True}
 
 
@@ -354,8 +293,6 @@ async def update_employee(eid: str, req: Request, authorization: Optional[str] =
         c.execute(f"UPDATE employees SET {','.join(fields)} WHERE employee_id=?", vals)
         c.commit()
     await hub.push_tools({"type": "config_changed"})  # tools refetch config
-    if "google_sheets_url" in b:
-        trigger_resolve_sheet_title(eid, b["google_sheets_url"])
     return {"ok": True}
 
 
@@ -402,7 +339,6 @@ def get_config(employee_id: Optional[str] = None):
     fb1 = get_setting("default_fb1")
     fb2 = get_setting("default_fb2")
     google_sheets_url = get_setting("google_sheets_url")
-    google_sheets_title = get_setting("google_sheets_title")
     google_sheets_apps_script_url = get_setting("google_sheets_apps_script_url")
     if employee_id:
         with db() as c:
@@ -412,7 +348,6 @@ def get_config(employee_id: Optional[str] = None):
             api_key_2 = (r["api_key2_override"] if "api_key2_override" in r.keys() else "") or api_key_2
             model = r["model_override"] or model
             google_sheets_url = (r["google_sheets_url"] if "google_sheets_url" in r.keys() else "") or google_sheets_url
-            google_sheets_title = (r["google_sheets_title"] if "google_sheets_title" in r.keys() else "") or google_sheets_title
     return {
         "ok": True,
         "tool_admin_password": get_setting("tool_admin_password"),
@@ -420,7 +355,6 @@ def get_config(employee_id: Optional[str] = None):
         "gemini_api_key_2": api_key_2,
         "model": model, "fb1": fb1, "fb2": fb2,
         "google_sheets_url": google_sheets_url,
-        "google_sheets_title": google_sheets_title,
         "google_sheets_apps_script_url": google_sheets_apps_script_url,
         "latest_version": get_setting("latest_version"),
         "update_pushed": get_setting("update_pushed") == "1",
@@ -480,7 +414,7 @@ def usage_recent(limit: int = 100, authorization: Optional[str] = Header(None)):
 @app.get("/api/settings")
 def read_settings(authorization: Optional[str] = Header(None)):
     require_admin(authorization)
-    keys = ["tool_admin_password", "default_api_key", "default_api_key_2", "default_model", "default_fb1", "default_fb2", "google_sheets_url", "google_sheets_title", "google_sheets_apps_script_url"]
+    keys = ["tool_admin_password", "default_api_key", "default_api_key_2", "default_model", "default_fb1", "default_fb2", "google_sheets_url", "google_sheets_apps_script_url"]
     return {"ok": True, "settings": {k: get_setting(k) for k in keys}}
 
 
@@ -488,11 +422,9 @@ def read_settings(authorization: Optional[str] = Header(None)):
 async def write_settings(req: Request, authorization: Optional[str] = Header(None)):
     require_admin(authorization)
     b = await req.json()
-    for k in ["tool_admin_password", "default_api_key", "default_api_key_2", "default_model", "default_fb1", "default_fb2", "google_sheets_url", "google_sheets_title", "google_sheets_apps_script_url"]:
+    for k in ["tool_admin_password", "default_api_key", "default_api_key_2", "default_model", "default_fb1", "default_fb2", "google_sheets_url", "google_sheets_apps_script_url"]:
         if k in b:
             set_setting(k, b[k])
-    if "google_sheets_url" in b:
-        trigger_resolve_global_sheet_title(b["google_sheets_url"])
     await hub.push_tools({"type": "config_changed"})
     return {"ok": True}
 

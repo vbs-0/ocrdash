@@ -266,7 +266,6 @@ async function renderEmployees(c){
     <td><input data-f="api_key2_override" data-id="${esc(e.employee_id)}" value="${esc(e.api_key2_override||'')}" placeholder="(default)" style="margin:0;padding:6px"></td>
     <td><input data-f="model_override" data-id="${esc(e.employee_id)}" value="${esc(e.model_override)}" placeholder="(default)" style="margin:0;padding:6px"></td>
     <td><input data-f="google_sheets_url" data-id="${esc(e.employee_id)}" value="${esc(e.google_sheets_url||'')}" placeholder="(default)" style="margin:0;padding:6px"></td>
-    <td><span style="font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:bold;color:var(--green)">${esc(e.google_sheets_title||'—')}</span></td>
     <td style="white-space:nowrap">
       <button class="sm" onclick="toggleEmp('${esc(e.employee_id)}',${e.active?0:1})">${e.active?'Disable':'Enable'}</button>
       <button class="sm" onclick="saveEmp('${esc(e.employee_id)}')">Save</button>
@@ -279,8 +278,8 @@ async function renderEmployees(c){
       <div style="flex:0"><button class="go" style="margin-top:6px" onclick="addEmp()">+ Add</button></div>
     </div></div>
     <div class="panel"><h3>Employees & per-user overrides</h3>
-    <div style="overflow-x:auto"><table><thead><tr><th>ID</th><th>Name</th><th>Status</th><th>API key</th><th>Fallback key</th><th>Model</th><th>Google Sheets URL</th><th>Sheet No</th><th></th></tr></thead>
-    <tbody>${rows||'<tr><td colspan=9 class="muted">No employees yet</td></tr>'}</tbody></table></div>
+    <div style="overflow-x:auto"><table><thead><tr><th>ID</th><th>Name</th><th>Status</th><th>API key</th><th>Fallback key</th><th>Model</th><th>Google Sheets URL</th><th></th></tr></thead>
+    <tbody>${rows||'<tr><td colspan=8 class="muted">No employees yet</td></tr>'}</tbody></table></div>
     <p class="muted">Overrides are per-employee; leave blank to use the global defaults from “API & Models”.</p></div>`;
 }
 async function addEmp(){const id=$('#newEid').value.trim();if(!id)return toast('Employee ID required');const r=await api('/api/employees',{method:'POST',body:JSON.stringify({employee_id:id,name:$('#newName').value.trim(),active:true})});toast(r.ok?'Added':'Error');render();}
@@ -308,7 +307,8 @@ async function renderSettings(c){
     <div class="row"><div><label>Primary model</label><input id="s_model" value="${esc(s.default_model)}"></div>
       <div><label>Fallback model 1</label><input id="s_fb1" value="${esc(s.default_fb1)}"></div>
       <div><label>Fallback model 2</label><input id="s_fb2" value="${esc(s.default_fb2)}"></div></div>
-    <label>Global Default Google Sheets URL ${s.google_sheets_title ? `(Active Sheet: <span style="color:var(--green);font-weight:bold">${esc(s.google_sheets_title)}</span>)` : ''}</label><input id="s_sheets_url" value="${esc(s.google_sheets_url||'')}" placeholder="https://docs.google.com/spreadsheets/d/.../edit">
+    <label>Global Default Google Sheets URL</label><input id="s_sheets_url" value="${esc(s.google_sheets_url||'')}" placeholder="https://docs.google.com/spreadsheets/d/.../edit">
+    <label>Google Apps Script Web App URL</label><input id="s_apps_script_url" value="${esc(s.google_sheets_apps_script_url||'')}" placeholder="https://script.google.com/macros/s/.../exec">
     <label>Tool admin-panel password (shared)</label><input id="s_pw" value="${esc(s.tool_admin_password)}">
     <button class="primary" style="max-width:220px" onclick="saveSettings()">Save & push to tools</button></div>`;
 }
@@ -316,7 +316,7 @@ async function saveSettings(){
   await api('/api/settings',{method:'POST',body:JSON.stringify({
     default_api_key:$('#s_key').value, default_api_key_2:$('#s_key2').value,
     default_model:$('#s_model').value, default_fb1:$('#s_fb1').value, default_fb2:$('#s_fb2').value,
-    google_sheets_url:$('#s_sheets_url').value,
+    google_sheets_url:$('#s_sheets_url').value, google_sheets_apps_script_url:$('#s_apps_script_url').value,
     tool_admin_password:$('#s_pw').value })});
   toast('Saved — connected tools refresh automatically');
 }
