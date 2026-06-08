@@ -317,6 +317,7 @@ async function renderSettings(c){
       <div><label><input type="checkbox" id="s_flag" ${(s.flag_uncertain==='1')?'checked':''}> Enable flagging</label></div>
       <div><label>Flag threshold % (0–100)</label><input id="s_flag_thr" type="number" min="0" max="100" value="${esc(s.flag_threshold||'90')}"></div>
     </div>
+    <label><input type="checkbox" id="s_dedup" ${(s.dedup_enabled==='1')?'checked':''}> Duplicate-image cache (skip re-spending API credits on duplicate images)</label>
     <button class="primary" style="max-width:220px" onclick="saveSettings()">Save & push to tools</button></div>`;
 }
 async function saveSettings(){
@@ -325,7 +326,8 @@ async function saveSettings(){
     default_model:$('#s_model').value, default_fb1:$('#s_fb1').value, default_fb2:$('#s_fb2').value,
     google_sheets_url:$('#s_sheets_url').value, google_sheets_apps_script_url:$('#s_apps_script_url').value,
     tool_admin_password:$('#s_pw').value,
-    flag_uncertain:$('#s_flag').checked, flag_threshold:parseInt($('#s_flag_thr').value,10) })});
+    flag_uncertain:$('#s_flag').checked, flag_threshold:parseInt($('#s_flag_thr').value,10),
+    dedup_enabled:$('#s_dedup').checked })});
   toast('Saved — connected tools refresh automatically');
 }
 

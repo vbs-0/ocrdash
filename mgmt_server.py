@@ -59,6 +59,7 @@ DEFAULTS = {
     "google_sheets_apps_script_url": "",
     "flag_uncertain": "1",                 # 1=on: mark low-confidence OCR chars with 🚩
     "flag_threshold": "90",                # confidence % below which chars are flagged
+    "dedup_enabled": "1",                  # 1=on: reuse cached OCR for duplicate images
     "latest_version": "1.0.0",
     "update_filename": "",
     "update_notes": "",
@@ -360,6 +361,7 @@ def get_config(employee_id: Optional[str] = None):
         "google_sheets_apps_script_url": google_sheets_apps_script_url,
         "flag_uncertain": get_setting("flag_uncertain") == "1",
         "flag_threshold": int(get_setting("flag_threshold") or "90"),
+        "dedup_enabled": get_setting("dedup_enabled") == "1",
         "latest_version": get_setting("latest_version"),
         "update_pushed": get_setting("update_pushed") == "1",
         "update_filename": get_setting("update_filename"),
@@ -418,7 +420,7 @@ def usage_recent(limit: int = 100, authorization: Optional[str] = Header(None)):
 @app.get("/api/settings")
 def read_settings(authorization: Optional[str] = Header(None)):
     require_admin(authorization)
-    keys = ["tool_admin_password", "default_api_key", "default_api_key_2", "default_model", "default_fb1", "default_fb2", "google_sheets_url", "google_sheets_apps_script_url", "flag_uncertain", "flag_threshold"]
+    keys = ["tool_admin_password", "default_api_key", "default_api_key_2", "default_model", "default_fb1", "default_fb2", "google_sheets_url", "google_sheets_apps_script_url", "flag_uncertain", "flag_threshold", "dedup_enabled"]
     return {"ok": True, "settings": {k: get_setting(k) for k in keys}}
 
 
@@ -432,6 +434,8 @@ async def write_settings(req: Request, authorization: Optional[str] = Header(Non
     # Uncertainty flagging — normalise bool/number to the stored string form.
     if "flag_uncertain" in b:
         set_setting("flag_uncertain", "1" if b["flag_uncertain"] in (True, 1, "1", "true", "True") else "0")
+    if "dedup_enabled" in b:
+        set_setting("dedup_enabled", "1" if b["dedup_enabled"] in (True, 1, "1", "true", "True") else "0")
     if "flag_threshold" in b:
         try:
             t = int(b["flag_threshold"])
