@@ -220,7 +220,7 @@ async function render(){
 async function renderMaster(c){
   const j = await api('/api/master/state');
   const grace = (j && j.offline_grace_hours) || 24;
-  c.innerHTML = `<div class="panel"><h3>🔐 Master Control <span class="muted" style="font-weight:400">(visible only to vbs)</span></h3>
+  c.innerHTML = `<div class="panel"><h3>🔐 Master Control <span class="muted" style="font-weight:400">(master account only)</span></h3>
     <p class="muted">These control the desktop tool's master lock. The master password unlocks the tool's hidden admin menu when the operator is logged in as <b>vbs</b>, and gates the server-IP change. It is stored only as a one-way hash and pushed to tools (never as plaintext).</p>
     <hr style="border:none;border-top:1px solid #eee;margin:14px 0">
     <h4 style="margin:0 0 6px">Tool master password</h4>

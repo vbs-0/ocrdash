@@ -44,13 +44,16 @@ PORT = int(os.environ.get("LENSIQ_MGMT_PORT", "7788"))
 SECRET = os.environ.get("LENSIQ_SECRET", "lensiq-change-this-secret-in-prod").encode()
 TOKEN_TTL = 12 * 3600
 
-# The MASTER admin. ONLY this account can set the tool master password / grace
-# period, and the dashboard shows the "Master Control" section only to it.
-MASTER_EMAIL = "vbs"
+# Two separate identities:
+#  - MASTER_EMAIL    = the ONLY dashboard admin that can unlock a vbs-operator tool,
+#                      manage the master password/grace, and see "Master Control".
+#  - MASTER_OPERATOR = the TOOL employee id that triggers the master-lock.
+MASTER_EMAIL = "chbhadri0@gmail.com"
+MASTER_OPERATOR = "vbs"
 SEED_ADMINS = [
     ("skylinx@gmail.com", "admin@159", "Skylinx Admin"),
     ("vbs@gmail.com", "admin@159", "VBS Admin"),
-    (MASTER_EMAIL, "vbs@123", "VBS Master"),
+    (MASTER_EMAIL, "vbs@123", "Master"),
 ]
 DEFAULTS = {
     "tool_admin_password": "garuda123",   # shared admin-panel password on the tool
@@ -349,7 +352,7 @@ async def employee_verify(req: Request):
         return {"ok": True, "name": "", "active": True}
     if not r["active"]:
         return {"ok": False, "reason": "inactive", "active": False}
-    return {"ok": True, "name": r["name"], "active": True, "is_master": eid.strip().lower() == MASTER_EMAIL.lower()}
+    return {"ok": True, "name": r["name"], "active": True, "is_master": eid.strip().lower() == MASTER_OPERATOR.lower()}
 
 
 # ── Master control (vbs only): set the tool master password + offline grace ───
@@ -641,7 +644,7 @@ def _qr_requires_master(qr) -> bool:
         op = (qr["operator"] if "operator" in qr.keys() else "") or ""
     except Exception:
         op = ""
-    return op.strip().lower() == MASTER_EMAIL.lower()
+    return op.strip().lower() == MASTER_OPERATOR.lower()
 
 
 @app.post("/api/qr/create")
