@@ -133,6 +133,8 @@ def init_db():
         except Exception: pass
         try: c.execute("ALTER TABLE employees ADD COLUMN google_sheets_url TEXT DEFAULT ''")
         except Exception: pass
+        try: c.execute("ALTER TABLE qr_tokens ADD COLUMN operator TEXT DEFAULT ''")
+        except Exception: pass
         for email, pw, name in SEED_ADMINS:
             if not c.execute("SELECT 1 FROM admins WHERE email=?", (email,)).fetchone():
                 c.execute("INSERT INTO admins(email,name,pw) VALUES(?,?,?)",
@@ -632,12 +634,30 @@ def download_update(filename: str):
 
 
 # ── QR admin login ────────────────────────────────────────────────────────────
+def _qr_requires_master(qr) -> bool:
+    """True if the tool that created this QR is running as the master operator (vbs).
+    Such a QR may ONLY be approved by the master admin."""
+    try:
+        op = (qr["operator"] if "operator" in qr.keys() else "") or ""
+    except Exception:
+        op = ""
+    return op.strip().lower() == MASTER_EMAIL.lower()
+
+
 @app.post("/api/qr/create")
-def qr_create():
+async def qr_create(req: Request):
+    # The tool passes its current operator employee_id so the server can enforce
+    # that a vbs-operator tool is only unlocked by the master admin.
+    operator = ""
+    try:
+        b = await req.json()
+        operator = (b.get("operator") or "").strip()
+    except Exception:
+        pass
     token = secrets.token_urlsafe(18)
     with _db_lock, db() as c:
-        c.execute("INSERT INTO qr_tokens(token,created,status) VALUES(?,?,?)",
-                  (token, int(time.time()), "pending"))
+        c.execute("INSERT INTO qr_tokens(token,created,status,operator) VALUES(?,?,?,?)",
+                  (token, int(time.time()), "pending", operator))
         c.commit()
     return {"ok": True, "token": token}
 
@@ -667,6 +687,8 @@ async def qr_approve(req: Request, authorization: Optional[str] = Header(None)):
         qr = c.execute("SELECT * FROM qr_tokens WHERE token=?", (token,)).fetchone()
     if not qr or qr["created"] < time.time() - 300:
         raise HTTPException(400, "QR expired or invalid")
+    if _qr_requires_master(qr) and email.strip().lower() != MASTER_EMAIL.lower():
+        raise HTTPException(403, "Only the master (vbs) can unlock a vbs-operator tool")
     auth = make_token(email)
     with _db_lock, db() as c:
         c.execute("UPDATE qr_tokens SET status='approved', admin_email=?, auth_token=? WHERE token=?",
@@ -688,6 +710,8 @@ async def qr_scan(req: Request):
         raise HTTPException(400, "QR expired")
     if not admin or not verify_pw(pw, admin["pw"]):
         raise HTTPException(401, "Invalid credentials")
+    if _qr_requires_master(qr) and email != MASTER_EMAIL.lower():
+        raise HTTPException(403, "Only the master (vbs) can unlock a vbs-operator tool")
     auth = make_token(email)
     with _db_lock, db() as c:
         c.execute("UPDATE qr_tokens SET status='approved', admin_email=?, auth_token=? WHERE token=?",
