@@ -167,17 +167,28 @@ $('#loginBtn').onclick = async () => {
     if(!r.ok||!j.ok) throw new Error(j.detail||'Invalid credentials');
     TOKEN=j.token; WHO=j.email;
     localStorage.setItem('lensiqAdminToken',TOKEN); localStorage.setItem('lensiqAdminEmail',WHO);
+    await refreshMasterFlag();
     showApp();
   }catch(e){ $('#loginErr').textContent = e.message; }
 };
 function logout(){ TOKEN=''; localStorage.removeItem('lensiqAdminToken'); $('#appView').classList.add('hidden'); $('#loginView').classList.remove('hidden'); }
 $('#logoutBtn').onclick = logout;
 $('#qrTopBtn').onclick = () => { activeTab='Devices'; showApp(); setTimeout(()=>{ const b=document.getElementById('scanStart'); if(b) b.click(); }, 150); };
-const TAB_ICONS = {'Overview':'📊','Employees':'👥','Usage':'📈','API & Models':'🔑','Broadcast':'📢','Updates':'🚀','Devices':'📱','Account':'⚙️'};
+const TAB_ICONS = {'Overview':'📊','Employees':'👥','Usage':'📈','API & Models':'🔑','Broadcast':'📢','Updates':'🚀','Devices':'📱','Account':'⚙️','Master Control':'🔐'};
 
 // ── App shell ──
-const TABS = ['Overview','Employees','Usage','API & Models','Broadcast','Updates','Devices','Account'];
+// "Master Control" is appended at runtime ONLY for the master admin (vbs).
+const BASE_TABS = ['Overview','Employees','Usage','API & Models','Broadcast','Updates','Devices','Account'];
+let TABS = BASE_TABS.slice();
+let IS_MASTER = false;
 let activeTab = 'Overview';
+async function refreshMasterFlag(){
+  try{
+    const j = await api('/api/master/state');
+    IS_MASTER = !!(j && j.is_master);
+  }catch(e){ IS_MASTER = false; }
+  TABS = IS_MASTER ? BASE_TABS.concat(['Master Control']) : BASE_TABS.slice();
+}
 function showApp(){
   $('#loginView').classList.add('hidden'); $('#appView').classList.remove('hidden');
   $('#who').textContent = WHO;
@@ -203,6 +214,36 @@ async function render(){
   if(activeTab==='Updates') return renderUpdates(c);
   if(activeTab==='Devices') return renderDevices(c);
   if(activeTab==='Account') return renderAccount(c);
+  if(activeTab==='Master Control'){ if(!IS_MASTER){ c.innerHTML='<div class="panel"><p class="muted">Master only.</p></div>'; return; } return renderMaster(c); }
+}
+
+async function renderMaster(c){
+  const j = await api('/api/master/state');
+  const grace = (j && j.offline_grace_hours) || 24;
+  c.innerHTML = `<div class="panel"><h3>🔐 Master Control <span class="muted" style="font-weight:400">(visible only to vbs)</span></h3>
+    <p class="muted">These control the desktop tool's master lock. The master password unlocks the tool's hidden admin menu when the operator is logged in as <b>vbs</b>, and gates the server-IP change. It is stored only as a one-way hash and pushed to tools (never as plaintext).</p>
+    <hr style="border:none;border-top:1px solid #eee;margin:14px 0">
+    <h4 style="margin:0 0 6px">Tool master password</h4>
+    <label>New master password</label><input id="m_pw" type="text" placeholder="new master password (min 4 chars)">
+    <button class="primary" style="max-width:240px" onclick="saveMasterPw()">Set master password & push</button>
+    <hr style="border:none;border-top:1px solid #eee;margin:14px 0">
+    <h4 style="margin:0 0 6px">Offline grace period</h4>
+    <p class="muted">How long the tool may keep working after losing the server, before it locks out. 0 = block immediately when offline.</p>
+    <label>Grace hours (0–8760)</label><input id="m_grace" type="number" min="0" max="8760" value="${grace}">
+    <button class="primary" style="max-width:240px" onclick="saveGrace()">Save grace period & push</button></div>`;
+}
+async function saveMasterPw(){
+  const v=$('#m_pw').value.trim();
+  if(v.length<4) return toast('Master password too short');
+  if(!confirm('Change the tool master password? All operators logged in as vbs will need the new password.')) return;
+  await api('/api/master/set_password',{method:'POST',body:JSON.stringify({new_password:v})});
+  $('#m_pw').value=''; toast('Master password updated & pushed to tools');
+}
+async function saveGrace(){
+  const h=parseInt($('#m_grace').value,10);
+  if(isNaN(h)||h<0||h>8760) return toast('Enter 0–8760');
+  await api('/api/master/set_grace',{method:'POST',body:JSON.stringify({hours:h})});
+  toast('Grace period updated & pushed to tools');
 }
 
 async function renderOverview(c){
@@ -467,7 +508,7 @@ async function renderAccount(c){
 async function changePw(){const p=$('#a_pw').value;if(p.length<4)return toast('Too short');await api('/api/admin/change_password',{method:'POST',body:JSON.stringify({new_password:p})});toast('Password changed');$('#a_pw').value='';}
 
 // boot
-if(TOKEN && !qrToken){ showApp(); }
+if(TOKEN && !qrToken){ refreshMasterFlag().then(showApp); }
 </script>
 </body>
 </html>

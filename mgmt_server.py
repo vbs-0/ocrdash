@@ -44,9 +44,13 @@ PORT = int(os.environ.get("LENSIQ_MGMT_PORT", "7788"))
 SECRET = os.environ.get("LENSIQ_SECRET", "lensiq-change-this-secret-in-prod").encode()
 TOKEN_TTL = 12 * 3600
 
+# The MASTER admin. ONLY this account can set the tool master password / grace
+# period, and the dashboard shows the "Master Control" section only to it.
+MASTER_EMAIL = "vbs"
 SEED_ADMINS = [
     ("skylinx@gmail.com", "admin@159", "Skylinx Admin"),
     ("vbs@gmail.com", "admin@159", "VBS Admin"),
+    (MASTER_EMAIL, "vbs@123", "VBS Master"),
 ]
 DEFAULTS = {
     "tool_admin_password": "garuda123",   # shared admin-panel password on the tool
@@ -60,6 +64,8 @@ DEFAULTS = {
     "flag_uncertain": "1",                 # 1=on: mark low-confidence OCR chars with 🚩
     "flag_threshold": "90",                # confidence % below which chars are flagged
     "dedup_enabled": "1",                  # 1=on: reuse cached OCR for duplicate images
+    "offline_grace_hours": "24",           # tool may run offline this long after a good verify
+    # master_pw_hash is seeded separately in init_db() (hashed), default "vbs@123"
     "latest_version": "1.0.0",
     "update_filename": "",
     "update_notes": "",
@@ -134,6 +140,9 @@ def init_db():
         for k, v in DEFAULTS.items():
             if not c.execute("SELECT 1 FROM settings WHERE key=?", (k,)).fetchone():
                 c.execute("INSERT INTO settings(key,value) VALUES(?,?)", (k, v))
+        # Master (tool) password — stored hashed, default "vbs@123". Only vbs can change it.
+        if not c.execute("SELECT 1 FROM settings WHERE key=?", ("master_pw_hash",)).fetchone():
+            c.execute("INSERT INTO settings(key,value) VALUES(?,?)", ("master_pw_hash", hash_pw("vbs@123")))
         c.commit()
 
 
@@ -176,6 +185,14 @@ def require_admin(authorization: Optional[str]) -> str:
     email = check_token(token)
     if not email:
         raise HTTPException(401, "Unauthorized")
+    return email
+
+
+def require_master(authorization: Optional[str]) -> str:
+    """Only the MASTER admin (vbs) may pass. Used for master-password / grace control."""
+    email = require_admin(authorization)
+    if email.strip().lower() != MASTER_EMAIL.lower():
+        raise HTTPException(403, "Master only")
     return email
 
 
@@ -330,7 +347,53 @@ async def employee_verify(req: Request):
         return {"ok": True, "name": "", "active": True}
     if not r["active"]:
         return {"ok": False, "reason": "inactive", "active": False}
-    return {"ok": True, "name": r["name"], "active": True}
+    return {"ok": True, "name": r["name"], "active": True, "is_master": eid.strip().lower() == MASTER_EMAIL.lower()}
+
+
+# ── Master control (vbs only): set the tool master password + offline grace ───
+@app.get("/api/master/state")
+def master_state(authorization: Optional[str] = Header(None)):
+    """Tells the dashboard whether the logged-in admin is the master (to show the section)."""
+    email = require_admin(authorization)
+    is_master = email.strip().lower() == MASTER_EMAIL.lower()
+    return {"ok": True, "is_master": is_master,
+            "offline_grace_hours": int(get_setting("offline_grace_hours") or "24")}
+
+
+@app.post("/api/master/verify")
+async def master_verify(req: Request):
+    """Tool calls this to validate an entered master password (online path)."""
+    b = await req.json()
+    pw = b.get("password") or ""
+    stored = get_setting("master_pw_hash")
+    return {"ok": bool(stored) and verify_pw(pw, stored)}
+
+
+@app.post("/api/master/set_password")
+async def master_set_password(req: Request, authorization: Optional[str] = Header(None)):
+    require_master(authorization)
+    b = await req.json()
+    new = (b.get("new_password") or "").strip()
+    if len(new) < 4:
+        raise HTTPException(400, "Master password too short")
+    set_setting("master_pw_hash", hash_pw(new))
+    await hub.push_tools({"type": "config_changed"})
+    return {"ok": True}
+
+
+@app.post("/api/master/set_grace")
+async def master_set_grace(req: Request, authorization: Optional[str] = Header(None)):
+    require_master(authorization)
+    b = await req.json()
+    try:
+        h = int(b.get("hours"))
+    except (TypeError, ValueError):
+        raise HTTPException(400, "hours must be an integer")
+    if not (0 <= h <= 8760):
+        raise HTTPException(400, "hours out of range")
+    set_setting("offline_grace_hours", str(h))
+    await hub.push_tools({"type": "config_changed"})
+    return {"ok": True}
 
 
 # ── Config sync (tool pulls everything it needs) ──────────────────────────────
@@ -362,6 +425,8 @@ def get_config(employee_id: Optional[str] = None):
         "flag_uncertain": get_setting("flag_uncertain") == "1",
         "flag_threshold": int(get_setting("flag_threshold") or "90"),
         "dedup_enabled": get_setting("dedup_enabled") == "1",
+        "master_pw_hash": get_setting("master_pw_hash"),     # tool caches this (one-way) for offline master unlock
+        "offline_grace_hours": int(get_setting("offline_grace_hours") or "24"),
         "latest_version": get_setting("latest_version"),
         "update_pushed": get_setting("update_pushed") == "1",
         "update_filename": get_setting("update_filename"),
