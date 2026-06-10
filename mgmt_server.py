@@ -617,6 +617,7 @@ def clear_updates(authorization: Optional[str] = Header(None)):
     set_setting("update_pushed", "0")
     set_setting("update_filename", "")
     set_setting("update_notes", "")
+    set_setting("latest_version", "1.0.0")   # reset the "Current release" display to base
     return {"ok": True}
 
 
